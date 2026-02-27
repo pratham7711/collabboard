@@ -25,6 +25,9 @@ export default function App() {
   // Stable identity for this tab
   const [myUser] = useState(() => getMyUser());
 
+  // True once the socket receives room-state (canvas data + peers loaded)
+  const [boardReady, setBoardReady] = useState(false);
+
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   const handleUndo = () => {
     const snapshot = undo();
@@ -94,8 +97,15 @@ export default function App() {
       if (canvasJSON) {
         const fc = fabricRef.current;
         if (fc) {
-          fc.loadFromJSON(JSON.parse(canvasJSON)).then(() => fc.renderAll());
+          fc.loadFromJSON(JSON.parse(canvasJSON)).then(() => {
+            fc.renderAll();
+            setBoardReady(true);
+          });
+        } else {
+          setBoardReady(true);
         }
+      } else {
+        setBoardReady(true);
       }
     });
 
@@ -112,15 +122,31 @@ export default function App() {
     });
 
     // ── Connect & join ────────────────────────────────────────────────────
+    // Emit join-room on EVERY (re)connect, not just the first one.
+    // Socket.io auto-reconnects after network blips; without re-emitting
+    // join-room the server has no record of which room this socket belongs
+    // to, so canvas-sync / cursor-move events from peers stop arriving and
+    // users effectively end up on isolated boards.
+    const joinRoom = () => {
+      socket.emit('join-room', {
+        boardId,
+        userId: myUser.userId,
+        userName: myUser.userName,
+        color: myUser.color,
+      });
+    };
+
+    socket.on('connect', joinRoom);
+
+    // Fallback: if the socket can't connect within 4s (server offline / wrong
+    // URL) still show the board so the user can draw locally.
+    const readyTimer = setTimeout(() => setBoardReady(true), 4000);
+
     socket.connect();
-    socket.emit('join-room', {
-      boardId,
-      userId: myUser.userId,
-      userName: myUser.userName,
-      color: myUser.color,
-    });
 
     return () => {
+      clearTimeout(readyTimer);
+      socket.off('connect', joinRoom);
       socket.off('room-state');
       socket.off('user-joined');
       socket.off('user-left');
@@ -146,6 +172,72 @@ export default function App() {
       <UserCursors />
 
       <MiniMap fabricRef={fabricRef} />
+
+      {/* Board loading overlay — visible until socket emits room-state */}
+      {!boardReady && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 200,
+            background: '#1A1A2E',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 20,
+            pointerEvents: 'none',
+            transition: 'opacity 0.4s',
+          }}
+        >
+          {/* Canvas grid skeleton */}
+          <div
+            style={{
+              width: 'min(480px, 90vw)',
+              height: 'min(320px, 50vh)',
+              borderRadius: 12,
+              border: '1px solid rgba(99,102,241,0.2)',
+              background: 'rgba(99,102,241,0.04)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.08) 50%, transparent 100%)',
+                backgroundSize: '200% 100%',
+                animation: 'boardShimmer 1.8s ease-in-out infinite',
+              }}
+            />
+            {/* Fake toolbar items */}
+            {[20, 52, 84, 116].map((top) => (
+              <div
+                key={top}
+                style={{
+                  position: 'absolute',
+                  left: 16,
+                  top,
+                  width: 24,
+                  height: 24,
+                  borderRadius: 6,
+                  background: 'rgba(99,102,241,0.12)',
+                }}
+              />
+            ))}
+          </div>
+          <div style={{ fontSize: 13, color: 'rgba(150,150,200,0.7)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            Connecting to board…
+          </div>
+          <style>{`
+            @keyframes boardShimmer {
+              0%   { background-position: 200% 0; }
+              100% { background-position: -200% 0; }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 }
