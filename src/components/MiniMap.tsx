@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as fabric from 'fabric';
 import { motion } from 'framer-motion';
+import { useIsMobile } from '../lib/useIsMobile';
 
 interface MiniMapProps {
   fabricRef: React.MutableRefObject<fabric.Canvas | null>;
@@ -12,6 +13,7 @@ const MINIMAP_H = 100;
 export default function MiniMap({ fabricRef }: MiniMapProps) {
   const miniCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const miniCtx = miniCanvasRef.current?.getContext('2d');
@@ -72,6 +74,8 @@ export default function MiniMap({ fabricRef }: MiniMapProps) {
     rafRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(rafRef.current);
   }, [fabricRef]);
+
+  if (isMobile) return null;
 
   return (
     <motion.div

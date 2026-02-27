@@ -3,6 +3,7 @@ import * as fabric from 'fabric';
 import { useBoardStore } from '../store/boardStore';
 import { socket } from '../lib/socket';
 import { getBoardId } from '../lib/user';
+import { useIsMobile } from '../lib/useIsMobile';
 import type { Tool } from '../types';
 
 interface CanvasProps {
@@ -10,9 +11,21 @@ interface CanvasProps {
   myUserId: string;
 }
 
+// Extract clientX/Y from either MouseEvent or TouchEvent
+function getClientPos(e: Event): { x: number; y: number } {
+  if ('touches' in e) {
+    const te = e as TouchEvent;
+    if (te.touches.length > 0) return { x: te.touches[0].clientX, y: te.touches[0].clientY };
+    if (te.changedTouches.length > 0) return { x: te.changedTouches[0].clientX, y: te.changedTouches[0].clientY };
+  }
+  const me = e as MouseEvent;
+  return { x: me.clientX, y: me.clientY };
+}
+
 export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   const {
     tool, strokeColor, strokeWidth, fillColor, showGrid, zoom,
@@ -130,6 +143,8 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       backgroundColor: '#1A1A2E',
       selection: true,
       preserveObjectStacking: true,
+      // Enable touch support
+      allowTouchScrolling: false,
     });
 
     fabricRef.current = fc;
@@ -155,7 +170,7 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       if (currentTool === 'select' || currentTool === 'pen' || currentTool === 'eraser') return;
       if (currentTool === 'text') return;
 
-      const pt = fc.getScenePoint(e.e as MouseEvent);
+      const pt = fc.getScenePoint(e.e);
       isDrawingRef.current = true;
       startPointRef.current = { x: pt.x, y: pt.y };
 
@@ -192,18 +207,18 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     });
 
     fc.on('mouse:move', (e) => {
-      // Emit cursor position to peers
-      const me = e.e as MouseEvent;
+      // Emit cursor position to peers (handles both mouse & touch)
+      const { x: clientX, y: clientY } = getClientPos(e.e);
       socket.emit('cursor-move', {
         boardId: getBoardId(),
         userId: myUserId,
-        x: me.clientX,
-        y: me.clientY,
+        x: clientX,
+        y: clientY,
       });
 
       // Shape resize while drawing
       if (!isDrawingRef.current || !activeShapeRef.current) return;
-      const pt = fc.getScenePoint(e.e as MouseEvent);
+      const pt = fc.getScenePoint(e.e);
       const { x: sx, y: sy } = startPointRef.current;
       const shape = activeShapeRef.current;
       const currentTool = toolRef.current;
@@ -245,10 +260,10 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       }
     });
 
-    // Text: double-click to place
+    // Text: double-click (or double-tap) to place
     fc.on('mouse:dblclick', (e) => {
       if (toolRef.current !== 'text') return;
-      const pt = fc.getScenePoint(e.e as MouseEvent);
+      const pt = fc.getScenePoint(e.e);
       const text = new fabric.IText('Type here...', {
         left: pt.x,
         top: pt.y,
@@ -294,6 +309,44 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     };
     window.addEventListener('resize', handleResize);
 
+    // ── Pinch-to-zoom (native touch events) ──────────────────────────────
+    let lastPinchDist = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (lastPinchDist > 0 && dist > 0) {
+          const scale = dist / lastPinchDist;
+          const currentZoom = fc.getZoom();
+          const newZoom = Math.min(Math.max(currentZoom * scale, 0.1), 8);
+          // Zoom toward midpoint of two fingers
+          const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          const rect = container.getBoundingClientRect();
+          fc.zoomToPoint(new fabric.Point(midX - rect.left, midY - rect.top), newZoom);
+          fc.renderAll();
+        }
+        lastPinchDist = dist;
+      }
+    };
+
+    const handleTouchEnd = () => { lastPinchDist = 0; };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+
     // ── Socket: receive remote canvas ──────────────────────────────────────
     const handleCanvasSync = ({ canvasJSON }: { canvasJSON: string }) => {
       applyRemoteCanvas(canvasJSON);
@@ -303,6 +356,9 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
       socket.off('canvas-sync', handleCanvasSync);
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
       fc.dispose();
@@ -406,11 +462,15 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       ref={containerRef}
       style={{
         position: 'absolute',
-        inset: 0,
         top: 56,
-        left: 80,
+        left: isMobile ? 0 : 80,
+        right: 0,
+        bottom: isMobile ? 60 : 0,
         cursor: getCursor(),
         overflow: 'hidden',
+        // Prevent default touch behavior so drawing works
+        touchAction: 'none',
+        userSelect: 'none',
       }}
     >
       <canvas ref={canvasElRef} />

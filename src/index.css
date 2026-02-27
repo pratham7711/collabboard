@@ -58,3 +58,46 @@ input, textarea {
   font-family: inherit;
   color: inherit;
 }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+:root {
+  --mobile-toolbar-height: 60px;
+}
+
+/* Prevent overscroll / pull-to-refresh on mobile */
+@media (max-width: 768px) {
+  html, body {
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+}
+
+/* Hide scrollbars on mobile toolbar */
+.mobile-toolbar-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.mobile-toolbar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile range input – taller thumb for touch */
+@media (max-width: 768px) {
+  input[type='range'] {
+    height: 36px;
+    accent-color: #4F46E5;
+  }
+  input[type='range']::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+  input[type='range']::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Safe-area padding for iOS notch/home-bar */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
+}
