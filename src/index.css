@@ -7,6 +7,9 @@
 }
 
 :root {
+  --ui-accent: #6366f1;
+  --ui-accent-dim: rgba(99,102,241,0.25);
+  --ui-accent-glow: rgba(99,102,241,0.12);
   --accent: #4F46E5;
   --accent-hover: #4338CA;
   --accent-light: #6366F1;

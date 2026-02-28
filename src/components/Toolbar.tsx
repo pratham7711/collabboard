@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Tooltip } from '@pratham/ui';
 import { useBoardStore } from '../store/boardStore';
 import { useIsMobile } from '../lib/useIsMobile';
 import { useTheme } from '../lib/theme';
@@ -570,22 +571,27 @@ export default function Toolbar({ onUndo, onRedo, onClear, onDownload, onImageUp
       >
         {/* Tools */}
         {TOOLS.map((t) => (
-          <ToolButton
+          <Tooltip
             key={t.id}
-            active={tool === t.id}
-            label={t.label}
-            shortcut={t.shortcut}
-            tc={tc}
-            onClick={() => {
-              if (t.id === 'image') {
-                imageInputRef.current?.click();
-              } else {
-                setTool(t.id);
-              }
-            }}
+            content={t.shortcut ? `${t.label} (${t.shortcut})` : t.label}
+            placement="right"
           >
-            {t.icon}
-          </ToolButton>
+            <ToolButton
+              active={tool === t.id}
+              label={t.label}
+              shortcut={t.shortcut}
+              tc={tc}
+              onClick={() => {
+                if (t.id === 'image') {
+                  imageInputRef.current?.click();
+                } else {
+                  setTool(t.id);
+                }
+              }}
+            >
+              {t.icon}
+            </ToolButton>
+          </Tooltip>
         ))}
 
         <Divider tc={tc} />
@@ -662,9 +668,15 @@ export default function Toolbar({ onUndo, onRedo, onClear, onDownload, onImageUp
 
         {/* Actions */}
         {actions.map((a) => (
-          <ToolButton key={a.id} label={a.label} shortcut={a.shortcut} tc={tc} onClick={a.onClick}>
-            {a.icon}
-          </ToolButton>
+          <Tooltip
+            key={a.id}
+            content={a.shortcut ? `${a.label} (${a.shortcut})` : a.label}
+            placement="right"
+          >
+            <ToolButton label={a.label} shortcut={a.shortcut} tc={tc} onClick={a.onClick}>
+              {a.icon}
+            </ToolButton>
+          </Tooltip>
         ))}
       </motion.div>
 

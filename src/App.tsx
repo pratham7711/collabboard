@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import * as fabric from 'fabric';
+import { ConnectionStatus } from '@pratham/ui';
 import TopBar from './components/TopBar';
 import Toolbar from './components/Toolbar';
 import Canvas, {
@@ -272,44 +273,25 @@ export default function App() {
               left: '50%',
               transform: 'translateX(-50%)',
               zIndex: 9000,
-              background: connectionStatus === 'reconnecting'
-                ? 'rgba(245, 158, 11, 0.95)'
-                : connectionStatus === 'unavailable'
-                ? 'rgba(99, 102, 241, 0.95)'
-                : 'rgba(239, 68, 68, 0.95)',
-              color: '#fff',
-              padding: '6px 18px',
-              borderRadius: 20,
-              fontSize: 12,
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              backdropFilter: 'blur(8px)',
-              letterSpacing: '0.02em',
             }}
           >
-            {connectionStatus === 'reconnecting' ? (
-              <>
-                <ReconnectSpinner />
-                Reconnecting…
-              </>
-            ) : connectionStatus === 'unavailable' ? (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                Solo mode — live collab needs a dedicated server
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                Connection lost — drawing locally
-              </>
-            )}
+            <ConnectionStatus
+              state={
+                connectionStatus === 'reconnecting'
+                  ? 'connecting'
+                  : connectionStatus === 'unavailable'
+                  ? 'unavailable'
+                  : 'disconnected'
+              }
+              variant="badge"
+              label={
+                connectionStatus === 'reconnecting'
+                  ? 'Reconnecting…'
+                  : connectionStatus === 'unavailable'
+                  ? 'Solo mode — live collab needs a dedicated server'
+                  : 'Connection lost — drawing locally'
+              }
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -381,20 +363,4 @@ export default function App() {
   );
 }
 
-function ReconnectSpinner() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      style={{ animation: 'spin 1s linear infinite' }}
-    >
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-      <path d="M21 12a9 9 0 11-6.219-8.56" />
-    </svg>
-  );
-}
+
