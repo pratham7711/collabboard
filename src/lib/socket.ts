@@ -1,32 +1,47 @@
 import { io } from 'socket.io-client';
 
 /**
- * Single shared socket instance.
+ * Socket.io client with environment-aware connection:
  *
- * In development Vite proxies /socket.io → port 3001 (see vite.config.ts).
- * In production set the environment variable VITE_SOCKET_URL to the URL of
- * your deployed socket server, e.g. https://collabboard-server.up.railway.app
+ * 1. VITE_SOCKET_URL is set (e.g. https://collabboard-server.up.railway.app)
+ *    → connect to that URL, path = /socket.io  (full WebSocket + polling)
  *
- * autoConnect: false — we explicitly connect after the room ID is known so we
- * can emit join-room as the very first message after the handshake.
+ * 2. Development (no VITE_SOCKET_URL, Vite dev server running)
+ *    → connect to '/', path = /socket.io  (proxied by Vite to localhost:3001)
+ *
+ * 3. Production on Vercel without a separate socket server
+ *    → connect to '/', path = /api/socket  (Vercel serverless function, polling only)
+ *
+ * autoConnect: false — we connect explicitly after joining a room.
  */
-export const socket = io(import.meta.env.VITE_SOCKET_URL ?? '/', {
+
+const isDev = import.meta.env.DEV;
+const socketUrl = import.meta.env.VITE_SOCKET_URL ?? '/';
+
+// Use the Vercel serverless path in production when no external server URL is given
+const socketPath = import.meta.env.VITE_SOCKET_URL
+  ? '/socket.io'
+  : isDev
+  ? '/socket.io'
+  : '/api/socket';
+
+export const socket = io(socketUrl, {
   autoConnect: false,
 
-  // Try WebSocket first, fall back to long-polling for restrictive networks
-  transports: ['websocket', 'polling'],
+  // Vercel serverless only supports polling; external servers support both
+  transports: import.meta.env.VITE_SOCKET_URL || isDev
+    ? ['websocket', 'polling']
+    : ['polling'],
 
-  // Re-use the same connection path the Vite proxy forwards
-  path: '/socket.io',
+  path: socketPath,
 
   // ── Reconnection ──────────────────────────────────────────────────────────
-  // Automatically reconnect forever (network blips, server restarts, etc.)
   reconnection: true,
   reconnectionAttempts: Infinity,
-  reconnectionDelay: 1_000,      // wait 1s before first retry
-  reconnectionDelayMax: 10_000,  // cap at 10s between retries
-  randomizationFactor: 0.4,      // add jitter so clients don't hammer simultaneously
+  reconnectionDelay: 1_000,
+  reconnectionDelayMax: 10_000,
+  randomizationFactor: 0.4,
 
   // ── Timeouts ──────────────────────────────────────────────────────────────
-  timeout: 20_000,               // how long to wait for the initial connection
+  timeout: 20_000,
 });
