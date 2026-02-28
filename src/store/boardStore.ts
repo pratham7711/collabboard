@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Tool, User } from '../types';
 
 export type Theme = 'dark' | 'light';
-export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'unavailable';
 
 interface BoardStore {
   tool: Tool;

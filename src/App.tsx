@@ -190,10 +190,21 @@ export default function App() {
       setConnectionStatus('disconnected');
     };
 
+    // Fired after all reconnection attempts have been exhausted.
+    // On Vercel without a dedicated socket server this happens quickly (after 5
+    // attempts) because every polling request hits a different instance and gets
+    // "Session ID unknown". We switch to solo/offline mode instead of looping forever.
+    const onReconnectFailed = () => {
+      console.warn('[socket] all reconnect attempts exhausted — switching to solo mode');
+      setConnectionStatus('unavailable');
+      setBoardReady(true); // unblock the board so the user can still draw locally
+    };
+
     socket.on('connect', joinRoom);
     socket.on('disconnect', onDisconnect);
     socket.io.on('reconnect_attempt', onReconnectAttempt);
     socket.io.on('reconnect', onReconnect);
+    socket.io.on('reconnect_failed', onReconnectFailed);
     socket.on('connect_error', onConnectError);
 
     // Fallback: if the socket can't connect within 6s show the board anyway
@@ -207,6 +218,7 @@ export default function App() {
       socket.off('disconnect', onDisconnect);
       socket.io.off('reconnect_attempt', onReconnectAttempt);
       socket.io.off('reconnect', onReconnect);
+      socket.io.off('reconnect_failed', onReconnectFailed);
       socket.off('connect_error', onConnectError);
       socket.off('room-state');
       socket.off('user-joined');
@@ -217,7 +229,7 @@ export default function App() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isOffline = connectionStatus === 'disconnected' || connectionStatus === 'reconnecting';
+  const isOffline = connectionStatus === 'disconnected' || connectionStatus === 'reconnecting' || connectionStatus === 'unavailable';
 
   return (
     <div
@@ -262,6 +274,8 @@ export default function App() {
               zIndex: 9000,
               background: connectionStatus === 'reconnecting'
                 ? 'rgba(245, 158, 11, 0.95)'
+                : connectionStatus === 'unavailable'
+                ? 'rgba(99, 102, 241, 0.95)'
                 : 'rgba(239, 68, 68, 0.95)',
               color: '#fff',
               padding: '6px 18px',
@@ -280,6 +294,13 @@ export default function App() {
               <>
                 <ReconnectSpinner />
                 Reconnecting…
+              </>
+            ) : connectionStatus === 'unavailable' ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                Solo mode — live collab needs a dedicated server
               </>
             ) : (
               <>

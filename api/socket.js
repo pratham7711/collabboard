@@ -1,17 +1,21 @@
 /**
  * Vercel Serverless Function — Socket.io adapter
  *
- * This module creates a singleton Socket.io server that persists in the
- * Vercel function container's Node.js module cache between invocations
- * (as long as the container remains warm). This gives real-time collaboration
- * without needing a separate always-on WebSocket server.
+ * ⚠️  IMPORTANT LIMITATION:
+ * Vercel serverless functions can run on multiple instances. Socket.IO's
+ * polling transport makes multiple HTTP requests per session. If request N
+ * hits a different instance than the one that created the session, the server
+ * returns {"code":1,"message":"Session ID unknown"} and the client reconnects.
  *
- * Limitations:
- *  - Uses HTTP long-polling only (Vercel serverless can't upgrade to WS)
- *  - State is lost when the function container goes cold (users re-join)
+ * This means live multi-user collaboration does NOT work reliably on Vercel
+ * serverless. The client is configured to stop retrying after 5 attempts and
+ * fall back to solo/offline mode.
  *
- * For production at scale, deploy server.mjs separately on Railway/Render
- * and set VITE_SOCKET_URL to its URL.
+ * ✅ FIX: Deploy server.mjs to Railway (or Render) and set the
+ *    VITE_SOCKET_URL environment variable in Vercel to its URL.
+ *    See DEPLOYMENT.md for step-by-step instructions.
+ *
+ * This file is kept as a fallback for dev/demo purposes only.
  */
 
 import { createServer } from 'http';
@@ -33,26 +37,37 @@ function broadcastUsers(io, boardId) {
   io.to(boardId).emit('users-update', userList);
 }
 
-// Singleton Socket.io server (cached across warm Vercel invocations)
+// Singleton Socket.io server (cached across warm Vercel invocations on the
+// SAME instance — does NOT persist across different instances)
 let io;
 
-function getIO(res) {
+function getIO() {
   if (!io) {
     const httpServer = createServer();
 
     io = new Server(httpServer, {
       path: '/api/socket',
       cors: { origin: '*', methods: ['GET', 'POST'] },
-      // MUST use polling only on Vercel serverless
+      // Polling only — Vercel serverless cannot upgrade to WebSocket
       transports: ['polling'],
-      pingInterval: 20_000,
-      pingTimeout: 15_000,
+      pingInterval: 25_000,
+      pingTimeout: 20_000,
+      // Do NOT enable connectionStateRecovery here — it causes issues when
+      // different instances try to recover sessions they don't own
     });
 
     io.on('connection', (socket) => {
       let myBoardId = null;
 
       socket.on('join-room', ({ boardId, userId, userName, color }) => {
+        if (myBoardId && myBoardId !== boardId) {
+          socket.leave(myBoardId);
+          const prevRoom = rooms.get(myBoardId);
+          if (prevRoom) {
+            prevRoom.users.delete(socket.id);
+            broadcastUsers(io, myBoardId);
+          }
+        }
         myBoardId = boardId;
         socket.join(boardId);
         const room = getRoom(boardId);
@@ -76,6 +91,10 @@ function getIO(res) {
         socket.to(boardId).emit('cursor-move', { userId, x, y });
       });
 
+      socket.on('ping', (callback) => {
+        if (typeof callback === 'function') callback();
+      });
+
       socket.on('disconnect', () => {
         if (!myBoardId) return;
         const room = rooms.get(myBoardId);
@@ -87,6 +106,11 @@ function getIO(res) {
           broadcastUsers(io, myBoardId);
         }
         if (room.users.size === 0) rooms.delete(myBoardId);
+        myBoardId = null;
+      });
+
+      socket.on('error', (err) => {
+        console.error(`[socket:${socket.id}] error:`, err?.message ?? err);
       });
     });
 
@@ -96,8 +120,14 @@ function getIO(res) {
 }
 
 export default function handler(req, res) {
-  const ioInstance = getIO(res);
-  // Let Socket.io handle the request via its internal polling transport
+  // Simple health-check ping (no Socket.IO path needed)
+  if (req.method === 'GET' && req.url?.includes('health')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', note: 'Vercel serverless — solo mode only. Deploy server.mjs to Railway for real collab.' }));
+    return;
+  }
+
+  const ioInstance = getIO();
   ioInstance.engine.handleRequest(req, res);
 }
 
