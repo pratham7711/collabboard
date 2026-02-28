@@ -228,7 +228,6 @@ export default function App() {
         overflow: 'hidden',
         background: theme.bg,
       }}
-      data-theme={useBoardStore.getState().theme}
     >
       <TopBar myUser={myUser} />
 
