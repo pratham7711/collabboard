@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import * as fabric from 'fabric';
 import TopBar from './components/TopBar';
 import Toolbar from './components/Toolbar';
@@ -13,6 +14,7 @@ import Canvas, {
 import UserCursors from './components/UserCursors';
 import MiniMap from './components/MiniMap';
 import { useBoardStore } from './store/boardStore';
+import { useTheme } from './lib/theme';
 import { socket } from './lib/socket';
 import { getBoardId, getMyUser } from './lib/user';
 import type { User } from './types';
@@ -20,13 +22,35 @@ import './index.css';
 
 export default function App() {
   const fabricRef = useRef<fabric.Canvas | null>(null);
-  const { undo, redo, clearBoard, pushHistory, setTool, setActiveUsers, addUser, removeUser, updateUserCursor } = useBoardStore();
+  const {
+    undo, redo, clearBoard, pushHistory, setTool,
+    setActiveUsers, addUser, removeUser, updateUserCursor,
+    setConnectionStatus, connectionStatus,
+  } = useBoardStore();
+  const theme = useTheme();
 
   // Stable identity for this tab
   const [myUser] = useState(() => getMyUser());
 
   // True once the socket receives room-state (canvas data + peers loaded)
   const [boardReady, setBoardReady] = useState(false);
+
+  // Holds the canvasJSON received in room-state if the Fabric canvas isn't
+  // ready yet. Canvas calls onCanvasReady() once it initialises.
+  const pendingCanvasJSON = useRef<string | null>(null);
+
+  // Called by Canvas once fabric is initialised
+  const onCanvasReady = useCallback(() => {
+    const json = pendingCanvasJSON.current;
+    if (!json) return;
+    pendingCanvasJSON.current = null;
+    const fc = fabricRef.current;
+    if (!fc) return;
+    fc.loadFromJSON(JSON.parse(json)).then(() => {
+      fc.renderAll();
+      setBoardReady(true);
+    });
+  }, []);
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   const handleUndo = () => {
@@ -40,7 +64,7 @@ export default function App() {
   };
 
   const handleClear = () => {
-    canvasClear(fabricRef, clearBoard);
+    canvasClear(fabricRef, clearBoard, theme.canvasBg);
   };
 
   const handleDownload = () => {
@@ -84,16 +108,16 @@ export default function App() {
 
     // ── Incoming events ──────────────────────────────────────────────────
     socket.on('room-state', ({ canvasJSON, users }: { canvasJSON: string | null; users: Array<{ userId: string; userName: string; color: string }> }) => {
-      // Populate existing peers
+      setConnectionStatus('connected');
+
       const peers: User[] = users.map((u) => ({
         id: u.userId,
         name: u.userName,
         color: u.color,
-        cursor: { x: -200, y: -200 }, // off-screen until first cursor-move
+        cursor: { x: -200, y: -200 },
       }));
       setActiveUsers(peers);
 
-      // Load saved canvas state if any
       if (canvasJSON) {
         const fc = fabricRef.current;
         if (fc) {
@@ -102,7 +126,7 @@ export default function App() {
             setBoardReady(true);
           });
         } else {
-          setBoardReady(true);
+          pendingCanvasJSON.current = canvasJSON;
         }
       } else {
         setBoardReady(true);
@@ -121,13 +145,22 @@ export default function App() {
       updateUserCursor(userId, x, y);
     });
 
-    // ── Connect & join ────────────────────────────────────────────────────
-    // Emit join-room on EVERY (re)connect, not just the first one.
-    // Socket.io auto-reconnects after network blips; without re-emitting
-    // join-room the server has no record of which room this socket belongs
-    // to, so canvas-sync / cursor-move events from peers stop arriving and
-    // users effectively end up on isolated boards.
+    // Authoritative user list pushed by server (on join/leave)
+    socket.on('users-update', (users: Array<{ userId: string; userName: string; color: string }>) => {
+      const peers: User[] = users
+        .filter((u) => u.userId !== myUser.userId) // exclude self
+        .map((u) => ({
+          id: u.userId,
+          name: u.userName,
+          color: u.color,
+          cursor: { x: -200, y: -200 },
+        }));
+      setActiveUsers(peers);
+    });
+
+    // ── Connection lifecycle ──────────────────────────────────────────────
     const joinRoom = () => {
+      setConnectionStatus('connected');
       socket.emit('join-room', {
         boardId,
         userId: myUser.userId,
@@ -136,27 +169,67 @@ export default function App() {
       });
     };
 
-    socket.on('connect', joinRoom);
+    const onDisconnect = (reason: string) => {
+      console.warn('[socket] disconnected:', reason);
+      setConnectionStatus('disconnected');
+    };
 
-    // Fallback: if the socket can't connect within 4s (server offline / wrong
-    // URL) still show the board so the user can draw locally.
-    const readyTimer = setTimeout(() => setBoardReady(true), 4000);
+    const onReconnectAttempt = (attempt: number) => {
+      console.log('[socket] reconnect attempt', attempt);
+      setConnectionStatus('reconnecting');
+    };
+
+    const onReconnect = () => {
+      console.log('[socket] reconnected');
+      setConnectionStatus('connected');
+      // join-room is handled by the 'connect' event after reconnect
+    };
+
+    const onConnectError = (err: Error) => {
+      console.warn('[socket] connect error:', err.message);
+      setConnectionStatus('disconnected');
+    };
+
+    socket.on('connect', joinRoom);
+    socket.on('disconnect', onDisconnect);
+    socket.io.on('reconnect_attempt', onReconnectAttempt);
+    socket.io.on('reconnect', onReconnect);
+    socket.on('connect_error', onConnectError);
+
+    // Fallback: if the socket can't connect within 6s show the board anyway
+    const readyTimer = setTimeout(() => setBoardReady(true), 6000);
 
     socket.connect();
 
     return () => {
       clearTimeout(readyTimer);
       socket.off('connect', joinRoom);
+      socket.off('disconnect', onDisconnect);
+      socket.io.off('reconnect_attempt', onReconnectAttempt);
+      socket.io.off('reconnect', onReconnect);
+      socket.off('connect_error', onConnectError);
       socket.off('room-state');
       socket.off('user-joined');
       socket.off('user-left');
       socket.off('cursor-move');
+      socket.off('users-update');
       socket.disconnect();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const isOffline = connectionStatus === 'disconnected' || connectionStatus === 'reconnecting';
+
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#1A1A2E' }}>
+    <div
+      style={{
+        position: 'relative',
+        width: '100vw',
+        height: '100vh',
+        overflow: 'hidden',
+        background: theme.bg,
+      }}
+      data-theme={useBoardStore.getState().theme}
+    >
       <TopBar myUser={myUser} />
 
       <Toolbar
@@ -167,20 +240,68 @@ export default function App() {
         onImageUpload={handleImageUpload}
       />
 
-      <Canvas fabricRef={fabricRef} myUserId={myUser.userId} />
+      <Canvas fabricRef={fabricRef} myUserId={myUser.userId} onReady={onCanvasReady} />
 
       <UserCursors />
 
       <MiniMap fabricRef={fabricRef} />
 
-      {/* Board loading overlay — visible until socket emits room-state */}
+      {/* ── Reconnection banner ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isOffline && boardReady && (
+          <motion.div
+            key="reconnect-banner"
+            initial={{ opacity: 0, y: -40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -40 }}
+            transition={{ duration: 0.25 }}
+            style={{
+              position: 'fixed',
+              top: 64,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 9000,
+              background: connectionStatus === 'reconnecting'
+                ? 'rgba(245, 158, 11, 0.95)'
+                : 'rgba(239, 68, 68, 0.95)',
+              color: '#fff',
+              padding: '6px 18px',
+              borderRadius: 20,
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(8px)',
+              letterSpacing: '0.02em',
+            }}
+          >
+            {connectionStatus === 'reconnecting' ? (
+              <>
+                <ReconnectSpinner />
+                Reconnecting…
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                Connection lost — drawing locally
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Board loading overlay */}
       {!boardReady && (
         <div
           style={{
             position: 'absolute',
             inset: 0,
             zIndex: 200,
-            background: '#1A1A2E',
+            background: theme.canvasBg,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -190,14 +311,13 @@ export default function App() {
             transition: 'opacity 0.4s',
           }}
         >
-          {/* Canvas grid skeleton */}
           <div
             style={{
               width: 'min(480px, 90vw)',
               height: 'min(320px, 50vh)',
               borderRadius: 12,
-              border: '1px solid rgba(99,102,241,0.2)',
-              background: 'rgba(99,102,241,0.04)',
+              border: `1px solid ${theme.accentMuted}`,
+              background: theme.accentBg,
               position: 'relative',
               overflow: 'hidden',
             }}
@@ -206,12 +326,11 @@ export default function App() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.08) 50%, transparent 100%)',
+                background: `linear-gradient(90deg, transparent 0%, ${theme.accentBg} 50%, transparent 100%)`,
                 backgroundSize: '200% 100%',
                 animation: 'boardShimmer 1.8s ease-in-out infinite',
               }}
             />
-            {/* Fake toolbar items */}
             {[20, 52, 84, 116].map((top) => (
               <div
                 key={top}
@@ -222,12 +341,12 @@ export default function App() {
                   width: 24,
                   height: 24,
                   borderRadius: 6,
-                  background: 'rgba(99,102,241,0.12)',
+                  background: theme.accentMuted,
                 }}
               />
             ))}
           </div>
-          <div style={{ fontSize: 13, color: 'rgba(150,150,200,0.7)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 13, color: theme.textFaint, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
             Connecting to board…
           </div>
           <style>{`
@@ -239,5 +358,23 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function ReconnectSpinner() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      style={{ animation: 'spin 1s linear infinite' }}
+    >
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <path d="M21 12a9 9 0 11-6.219-8.56" />
+    </svg>
   );
 }

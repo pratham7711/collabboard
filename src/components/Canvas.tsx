@@ -4,12 +4,18 @@ import { useBoardStore } from '../store/boardStore';
 import { socket } from '../lib/socket';
 import { getBoardId } from '../lib/user';
 import { useIsMobile } from '../lib/useIsMobile';
+import { useTheme } from '../lib/theme';
 import type { Tool } from '../types';
 
 interface CanvasProps {
   fabricRef: React.MutableRefObject<fabric.Canvas | null>;
   myUserId: string;
+  /** Called once after the Fabric canvas is fully initialised. */
+  onReady?: () => void;
 }
+
+// Cursor-move throttle — emit at most once every 40ms (~25fps)
+const CURSOR_THROTTLE_MS = 40;
 
 // Extract clientX/Y from either MouseEvent or TouchEvent
 function getClientPos(e: Event): { x: number; y: number } {
@@ -22,22 +28,27 @@ function getClientPos(e: Event): { x: number; y: number } {
   return { x: me.clientX, y: me.clientY };
 }
 
-export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
+export default function Canvas({ fabricRef, myUserId, onReady }: CanvasProps) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const theme = useTheme();
+
+  // Track last cursor emission time for throttling
+  const lastCursorEmitRef = useRef<number>(0);
 
   const {
     tool, strokeColor, strokeWidth, fillColor, showGrid, zoom,
     pushHistory,
   } = useBoardStore();
 
-  // Refs to avoid stale closures
+  // Refs to avoid stale closures in event handlers
   const toolRef = useRef<Tool>(tool);
   const strokeColorRef = useRef(strokeColor);
   const strokeWidthRef = useRef(strokeWidth);
   const fillColorRef = useRef(fillColor);
   const showGridRef = useRef(showGrid);
+  const themeRef = useRef(theme);
   const isDrawingRef = useRef(false);
   const startPointRef = useRef({ x: 0, y: 0 });
   const activeShapeRef = useRef<fabric.Object | null>(null);
@@ -53,8 +64,9 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
   useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
   useEffect(() => { fillColorRef.current = fillColor; }, [fillColor]);
   useEffect(() => { showGridRef.current = showGrid; }, [showGrid]);
+  useEffect(() => { themeRef.current = theme; }, [theme]);
 
-  // ── Grid helper (pure function, no side-effects on state) ─────────────────
+  // ── Grid helper ───────────────────────────────────────────────────────────
   const applyGrid = useCallback((fc: fabric.Canvas, show: boolean) => {
     // Remove existing grid lines
     fc.getObjects()
@@ -65,10 +77,12 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       const gridSize = 40;
       const w = fc.getWidth();
       const h = fc.getHeight();
+      const gridColor = themeRef.current.canvasGrid;
+
       for (let x = 0; x <= w; x += gridSize) {
         const line = Object.assign(
           new fabric.Line([x, 0, x, h], {
-            stroke: 'rgba(255,255,255,0.05)',
+            stroke: gridColor,
             strokeWidth: 1,
             selectable: false,
             evented: false,
@@ -82,7 +96,7 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       for (let y = 0; y <= h; y += gridSize) {
         const line = Object.assign(
           new fabric.Line([0, y, w, y], {
-            stroke: 'rgba(255,255,255,0.05)',
+            stroke: gridColor,
             strokeWidth: 1,
             selectable: false,
             evented: false,
@@ -122,8 +136,9 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     if (!fc) return;
     isRemoteUpdateRef.current = true;
     fc.loadFromJSON(JSON.parse(canvasJSON)).then(() => {
+      // Re-apply canvas background and grid after loading remote state
+      fc.backgroundColor = themeRef.current.canvasBg;
       fc.renderAll();
-      // Re-apply local grid overlay after replacing canvas contents
       applyGrid(fc, showGridRef.current);
       isRemoteUpdateRef.current = false;
     });
@@ -140,14 +155,18 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     const fc = new fabric.Canvas(canvasElRef.current, {
       width: w,
       height: h,
-      backgroundColor: '#1A1A2E',
+      backgroundColor: themeRef.current.canvasBg,
       selection: true,
       preserveObjectStacking: true,
-      // Enable touch support
       allowTouchScrolling: false,
+      // Enable better touch handling
+      enablePointerEvents: true,
     });
 
     fabricRef.current = fc;
+
+    // Notify App that the fabric canvas is ready
+    onReady?.();
 
     // Free drawing brush setup
     fc.freeDrawingBrush = new fabric.PencilBrush(fc);
@@ -207,14 +226,18 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     });
 
     fc.on('mouse:move', (e) => {
-      // Emit cursor position to peers (handles both mouse & touch)
-      const { x: clientX, y: clientY } = getClientPos(e.e);
-      socket.emit('cursor-move', {
-        boardId: getBoardId(),
-        userId: myUserId,
-        x: clientX,
-        y: clientY,
-      });
+      // Emit cursor position to peers — throttled
+      const now = Date.now();
+      if (now - lastCursorEmitRef.current >= CURSOR_THROTTLE_MS) {
+        lastCursorEmitRef.current = now;
+        const { x: clientX, y: clientY } = getClientPos(e.e);
+        socket.emit('cursor-move', {
+          boardId: getBoardId(),
+          userId: myUserId,
+          x: clientX,
+          y: clientY,
+        });
+      }
 
       // Shape resize while drawing
       if (!isDrawingRef.current || !activeShapeRef.current) return;
@@ -298,30 +321,38 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     };
     window.addEventListener('keydown', handleKeyDown);
 
-    // Resize
+    // Resize observer for responsive canvas
     const handleResize = () => {
       if (!containerRef.current) return;
       fc.setDimensions({
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       });
+      if (showGridRef.current) applyGrid(fc, true);
       fc.renderAll();
     };
+
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(container);
     window.addEventListener('resize', handleResize);
 
     // ── Pinch-to-zoom (native touch events) ──────────────────────────────
     let lastPinchDist = 0;
+    let isPinching = false;
 
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
+        isPinching = true;
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+      } else {
+        isPinching = false;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
+      if (e.touches.length === 2 && isPinching) {
         e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -330,7 +361,6 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
           const scale = dist / lastPinchDist;
           const currentZoom = fc.getZoom();
           const newZoom = Math.min(Math.max(currentZoom * scale, 0.1), 8);
-          // Zoom toward midpoint of two fingers
           const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
           const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
           const rect = container.getBoundingClientRect();
@@ -341,11 +371,33 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
       }
     };
 
-    const handleTouchEnd = () => { lastPinchDist = 0; };
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        isPinching = false;
+        lastPinchDist = 0;
+      }
+    };
 
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
     container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    // ── Mouse wheel zoom ──────────────────────────────────────────────────
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY;
+        const currentZoom = fc.getZoom();
+        const newZoom = Math.min(Math.max(currentZoom * (delta > 0 ? 0.95 : 1.05), 0.1), 8);
+        const rect = container.getBoundingClientRect();
+        fc.zoomToPoint(
+          new fabric.Point(e.clientX - rect.left, e.clientY - rect.top),
+          newZoom
+        );
+        fc.renderAll();
+      }
+    };
+    container.addEventListener('wheel', handleWheel, { passive: false });
 
     // ── Socket: receive remote canvas ──────────────────────────────────────
     const handleCanvasSync = ({ canvasJSON }: { canvasJSON: string }) => {
@@ -356,15 +408,26 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       container.removeEventListener('touchstart', handleTouchStart);
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('wheel', handleWheel);
       socket.off('canvas-sync', handleCanvasSync);
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
       fc.dispose();
       fabricRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Theme change: update canvas background ────────────────────────────────
+  useEffect(() => {
+    const fc = fabricRef.current;
+    if (!fc) return;
+    fc.backgroundColor = theme.canvasBg;
+    if (showGrid) applyGrid(fc, true);
+    fc.renderAll();
+  }, [theme, showGrid, applyGrid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Tool changes ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -468,10 +531,14 @@ export default function Canvas({ fabricRef, myUserId }: CanvasProps) {
         bottom: isMobile ? 60 : 0,
         cursor: getCursor(),
         overflow: 'hidden',
-        // Prevent default touch behavior so drawing works
+        background: theme.canvasBg,
+        // Prevent default touch behavior so drawing/pinch works natively
         touchAction: 'none',
         userSelect: 'none',
-      }}
+        WebkitUserSelect: 'none',
+        // Prevent callout on long-press on iOS
+        WebkitTouchCallout: 'none',
+      } as React.CSSProperties}
     >
       <canvas ref={canvasElRef} />
     </div>
@@ -498,12 +565,13 @@ export function canvasRedo(
 
 export function canvasClear(
   fabricRef: React.MutableRefObject<fabric.Canvas | null>,
-  clearBoard: () => void
+  clearBoard: () => void,
+  canvasBg: string
 ) {
   const fc = fabricRef.current;
   if (!fc) return;
   fc.clear();
-  fc.backgroundColor = '#1A1A2E';
+  fc.backgroundColor = canvasBg;
   fc.renderAll();
   clearBoard();
   // Broadcast clear to peers

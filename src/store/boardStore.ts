@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { Tool, User } from '../types';
 
+export type Theme = 'dark' | 'light';
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+
 interface BoardStore {
   tool: Tool;
   strokeColor: string;
@@ -12,6 +15,8 @@ interface BoardStore {
   activeUsers: User[];   // remote peers only (not the local user)
   history: string[];
   historyIndex: number;
+  theme: Theme;
+  connectionStatus: ConnectionStatus;
 
   setTool: (tool: Tool) => void;
   setStrokeColor: (color: string) => void;
@@ -20,6 +25,9 @@ interface BoardStore {
   setZoom: (zoom: number) => void;
   toggleGrid: () => void;
   setBoardTitle: (title: string) => void;
+  setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
+  setConnectionStatus: (status: ConnectionStatus) => void;
 
   // Real user management
   setActiveUsers: (users: User[]) => void;
@@ -33,6 +41,14 @@ interface BoardStore {
   clearBoard: () => void;
 }
 
+function getSavedTheme(): Theme {
+  try {
+    const saved = localStorage.getItem('collabboard-theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch { /* ignore SSR / private browsing */ }
+  return 'dark';
+}
+
 export const useBoardStore = create<BoardStore>((set, get) => ({
   tool: 'select',
   strokeColor: '#FFFFFF',
@@ -44,6 +60,8 @@ export const useBoardStore = create<BoardStore>((set, get) => ({
   activeUsers: [],   // starts empty; populated via socket events
   history: [],
   historyIndex: -1,
+  theme: getSavedTheme(),
+  connectionStatus: 'connecting',
 
   setTool: (tool) => set({ tool }),
   setStrokeColor: (strokeColor) => set({ strokeColor }),
@@ -52,6 +70,19 @@ export const useBoardStore = create<BoardStore>((set, get) => ({
   setZoom: (zoom) => set({ zoom: Math.min(200, Math.max(50, zoom)) }),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   setBoardTitle: (boardTitle) => set({ boardTitle }),
+
+  setTheme: (theme) => {
+    try { localStorage.setItem('collabboard-theme', theme); } catch { /* ignore */ }
+    set({ theme });
+  },
+
+  toggleTheme: () => {
+    const next: Theme = get().theme === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('collabboard-theme', next); } catch { /* ignore */ }
+    set({ theme: next });
+  },
+
+  setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 
   setActiveUsers: (users) => set({ activeUsers: users }),
 

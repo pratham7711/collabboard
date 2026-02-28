@@ -7,39 +7,35 @@
 }
 
 :root {
-  --bg-primary: #1A1A2E;
-  --bg-secondary: #16213E;
-  --bg-tertiary: #0F3460;
   --accent: #4F46E5;
   --accent-hover: #4338CA;
   --accent-light: #6366F1;
-  --white: #FFFFFF;
-  --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --border: rgba(255, 255, 255, 0.08);
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   --radius: 10px;
   --radius-sm: 6px;
   --toolbar-width: 68px;
   --topbar-height: 56px;
+  --mobile-toolbar-height: 60px;
+  color-scheme: dark;
 }
 
 html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent pull-to-refresh and overscroll */
+  overscroll-behavior: none;
 }
 
-::-webkit-scrollbar { width: 6px; }
+/* Scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.5); }
 
-::selection { background: rgba(79, 70, 229, 0.4); }
+::selection { background: rgba(79, 70, 229, 0.4); color: inherit; }
 
 :focus-visible {
   outline: 2px solid var(--accent-light);
@@ -52,6 +48,8 @@ button {
   background: none;
   font-family: inherit;
   color: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* Avoid 300ms tap delay */
 }
 
 input, textarea {
@@ -59,33 +57,18 @@ input, textarea {
   color: inherit;
 }
 
-/* ── Mobile ──────────────────────────────────────────────────────────────── */
-:root {
-  --mobile-toolbar-height: 60px;
-}
-
-/* Prevent overscroll / pull-to-refresh on mobile */
+/* ── Touch / mobile ─────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   html, body {
+    /* Prevent bouncing/overscroll on iOS */
     overscroll-behavior: none;
     touch-action: none;
   }
-}
 
-/* Hide scrollbars on mobile toolbar */
-.mobile-toolbar-scroll {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.mobile-toolbar-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-/* Mobile range input – taller thumb for touch */
-@media (max-width: 768px) {
+  /* Bigger tap target range inputs */
   input[type='range'] {
     height: 36px;
-    accent-color: #4F46E5;
+    accent-color: var(--accent);
   }
   input[type='range']::-webkit-slider-thumb {
     width: 28px;
@@ -97,7 +80,33 @@ input, textarea {
   }
 }
 
-/* Safe-area padding for iOS notch/home-bar */
+/* Hide scrollbars on horizontal mobile toolbar */
+.mobile-toolbar-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.mobile-toolbar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe-area support for iOS home bar */
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Prevent iOS callout (long-press popup) on canvas area */
+canvas {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Smooth theme transitions on UI elements only (not canvas) */
+.toolbar-surface, .topbar-surface {
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.2s ease;
+}
+
+/* Range input base styles */
+input[type='range'] {
+  accent-color: var(--accent);
 }

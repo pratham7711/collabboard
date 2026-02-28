@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: collabboard-server
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node server.mjs
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CORS_ORIGIN
+        value: https://collabboard-ten.vercel.app
+    healthCheckPath: /

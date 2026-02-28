@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as fabric from 'fabric';
 import { motion } from 'framer-motion';
 import { useIsMobile } from '../lib/useIsMobile';
+import { useTheme } from '../lib/theme';
 
 interface MiniMapProps {
   fabricRef: React.MutableRefObject<fabric.Canvas | null>;
@@ -14,6 +15,7 @@ export default function MiniMap({ fabricRef }: MiniMapProps) {
   const miniCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const isMobile = useIsMobile();
+  const tc = useTheme();
 
   useEffect(() => {
     const miniCtx = miniCanvasRef.current?.getContext('2d');
@@ -31,17 +33,16 @@ export default function MiniMap({ fabricRef }: MiniMapProps) {
       const mainH = fc.getHeight();
 
       miniCtx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
-      miniCtx.fillStyle = '#1A1A2E';
+      // Use the canvas's actual background color
+      miniCtx.fillStyle = typeof fc.backgroundColor === 'string' ? fc.backgroundColor : '#1A1A2E';
       miniCtx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
 
-      // Draw main canvas scaled down
       try {
         miniCtx.drawImage(mainCanvas, 0, 0, MINIMAP_W, MINIMAP_H);
       } catch {
         // Ignore cross-origin errors
       }
 
-      // Viewport indicator
       const scaleX = MINIMAP_W / mainW;
       const scaleY = MINIMAP_H / mainH;
       const vpt = fc.viewportTransform;
@@ -54,17 +55,13 @@ export default function MiniMap({ fabricRef }: MiniMapProps) {
         miniCtx.strokeStyle = 'rgba(79,70,229,0.8)';
         miniCtx.lineWidth = 1.5;
         miniCtx.strokeRect(
-          Math.max(0, vx),
-          Math.max(0, vy),
-          Math.min(MINIMAP_W, vw),
-          Math.min(MINIMAP_H, vh)
+          Math.max(0, vx), Math.max(0, vy),
+          Math.min(MINIMAP_W, vw), Math.min(MINIMAP_H, vh)
         );
         miniCtx.fillStyle = 'rgba(79,70,229,0.08)';
         miniCtx.fillRect(
-          Math.max(0, vx),
-          Math.max(0, vy),
-          Math.min(MINIMAP_W, vw),
-          Math.min(MINIMAP_H, vh)
+          Math.max(0, vx), Math.max(0, vy),
+          Math.min(MINIMAP_W, vw), Math.min(MINIMAP_H, vh)
         );
       }
 
@@ -87,22 +84,22 @@ export default function MiniMap({ fabricRef }: MiniMapProps) {
         bottom: 16,
         right: 16,
         zIndex: 100,
-        background: 'rgba(22, 33, 62, 0.95)',
+        background: tc.surface,
         backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: `1px solid ${tc.surfaceBorder}`,
         borderRadius: 10,
         overflow: 'hidden',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
       }}
     >
       <div style={{
         padding: '4px 8px',
         fontSize: 9,
         fontWeight: 600,
-        color: 'rgba(255,255,255,0.4)',
+        color: tc.textFaint,
         letterSpacing: '0.08em',
         textTransform: 'uppercase',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        borderBottom: `1px solid ${tc.surfaceBorder}`,
       }}>
         Overview
       </div>
