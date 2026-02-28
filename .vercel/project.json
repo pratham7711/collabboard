@@ -1,1 +1,16 @@
-{"projectId":"prj_onEtHHIXkHGv2DPHkyeWRXVVsZWx","orgId":"team_SkPbuvE2AA6LBViXnxJSIupd","projectName":"collabboard"}
+{
+  "projectId": "prj_onEtHHIXkHGv2DPHkyeWRXVVsZWx",
+  "orgId": "team_SkPbuvE2AA6LBViXnxJSIupd",
+  "projectName": "collabboard",
+  "settings": {
+    "createdAt": 1772198476807,
+    "framework": "vite",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import * as fabric from 'fabric';
-import { ConnectionStatus } from '@pratham/ui';
+import { ConnectionStatus } from './lib/ui/index.js';
 import TopBar from './components/TopBar';
 import Toolbar from './components/Toolbar';
 import Canvas, {

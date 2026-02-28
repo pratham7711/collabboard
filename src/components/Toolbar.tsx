@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tooltip } from '@pratham/ui';
+import { Tooltip } from '../lib/ui/index.js';
 import { useBoardStore } from '../store/boardStore';
 import { useIsMobile } from '../lib/useIsMobile';
 import { useTheme } from '../lib/theme';
