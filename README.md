@@ -1,110 +1,118 @@
-# CollabBoard 🎨
+# 🎨 CollabBoard
 
-A real-time collaborative whiteboard built with React, Fabric.js, and Socket.io.
+> **Real-time collaborative whiteboard — draw, sketch, and brainstorm together, live.**
 
-**Live Demo:** [https://collabboard-phi.vercel.app](https://collabboard-phi.vercel.app)
-
-## Features
-
-- 🎨 **Drawing tools:** Pen, Rectangle, Circle, Line, Text, Eraser, Image upload
-- 🔄 **Real-time sync:** All canvas changes instantly broadcast to everyone in the room
-- 👥 **User presence:** See who's online with coloured avatars and live cursors
-- 🌙 **Dark / Light theme:** Persisted to localStorage, applied to all UI & canvas
-- 🎨 **Color picker:** 8 preset colours + custom hex picker for stroke & fill
-- 📏 **Pen size slider:** 1–32 px stroke width with live preview
-- 📱 **Mobile responsive:** Bottom toolbar, touch drawing, pinch-to-zoom
-- ⌨️  **Keyboard shortcuts:** V, P, R, C, L, T, E, Ctrl+Z/Y, Ctrl+A
-- 🗺️ **Mini-map** overview panel (desktop)
-- 📥 **Download** board as PNG
-- 🔗 **Share** via URL with `?board=<id>` parameter
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-6366f1?style=for-the-badge&logo=vercel)](https://collabboard-phi.vercel.app)
 
 ---
 
-## Architecture
+## ✨ Features
 
-```
-┌─────────────────────────────────┐     ┌─────────────────────────────────┐
-│  Frontend (Vercel)              │────▶│  Socket Server (Railway/Render)  │
-│  React + Fabric.js + Zustand    │◀────│  Node.js + Socket.io             │
-│  https://collabboard-phi.…app   │ WS  │  (needs VITE_SOCKET_URL set)     │
-└─────────────────────────────────┘     └─────────────────────────────────┘
-```
+- 🖊️ **Full drawing toolkit** — Pen, Rectangle, Circle, Line, Text, Eraser, and Image upload with adjustable stroke width (1–32px) and color
+- 🔄 **Real-time sync** — every canvas change is instantly broadcast to all collaborators via Socket.io WebSockets
+- 👥 **Live presence** — see who's online with colored avatars and live cursors for each connected user
+- ↩️ **Undo / Redo** — full history with `Ctrl+Z` / `Ctrl+Y` keyboard shortcuts
+- 🌙 **Dark / Light theme** — persisted to localStorage, applied across all UI and canvas elements
+- 📥 **Export as PNG** — download the entire board with one click
+- 📱 **Mobile-first** — touch drawing, pinch-to-zoom, and a bottom-anchored toolbar for small screens
 
 ---
 
-## Setup
+## 🖼️ Screenshot
 
-### 1. Install dependencies
+![CollabBoard Screenshot](collabboard-screenshot.png)
+
+---
+
+## 🛠️ Tech Stack
+
+![React](https://img.shields.io/badge/React%2019-61DAFB?style=flat-square&logo=react&logoColor=000)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=fff)
+![Fabric.js](https://img.shields.io/badge/Fabric.js%207-E34F26?style=flat-square)
+![Socket.io](https://img.shields.io/badge/Socket.io%204-010101?style=flat-square&logo=socket.io)
+![Zustand](https://img.shields.io/badge/Zustand-FF6B35?style=flat-square)
+![Vite](https://img.shields.io/badge/Vite%207-646CFF?style=flat-square&logo=vite&logoColor=fff)
+![Framer Motion](https://img.shields.io/badge/Framer%20Motion-0055FF?style=flat-square&logo=framer&logoColor=fff)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=fff)
+
+---
+
+## 🚀 Local Setup
+
+### Prerequisites
+
+- Node.js 18+
+
+### 1. Clone the repo
 
 ```bash
+git clone https://github.com/pratham7711/collabboard.git
+cd collabboard
 npm install
 ```
 
-### 2. Start the socket server (dev)
+### 2. Start the Socket.io server
 
 ```bash
-npm run server      # starts on ws://localhost:3001
+npm run server        # starts WebSocket server on ws://localhost:3001
 ```
 
-### 3. Start the frontend (dev)
+### 3. Start the frontend
 
 ```bash
-npm run dev         # Vite dev server with /socket.io proxy to :3001
+npm run dev           # Vite dev server with /socket.io proxy to :3001
 ```
+
+Open [http://localhost:5173](http://localhost:5173) — open a second tab or browser window to see real-time collaboration in action.
 
 ---
 
-## Deployment
+## 🌐 Environment Variables
 
-### Frontend → Vercel
+| Variable | Where | Description |
+|---|---|---|
+| `VITE_SOCKET_URL` | Vercel | URL of the deployed socket server (e.g. Railway) |
+| `PORT` | Railway / Render | HTTP port for socket server (auto-set by platform) |
+| `CORS_ORIGIN` | Railway / Render | Allowed frontend origin |
 
-The project deploys automatically via the Vercel CLI or GitHub integration.
+---
+
+## ☁️ Deployment
+
+**Frontend → Vercel**
 
 ```bash
 vercel deploy --prod
 ```
 
-### Socket Server → Railway (recommended)
+**Socket Server → Railway**
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/pratham7711/collabboard)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app)
 
-**Manual steps:**
-
-1. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
-2. Select `pratham7711/collabboard`
-3. Railway auto-detects `railway.json` and runs `node server.mjs`
-4. In **Variables**, add:
-   ```
-   CORS_ORIGIN = https://collabboard-phi.vercel.app
-   PORT        = (set automatically)
-   ```
-5. Copy the Railway public URL (e.g. `https://collabboard-server.up.railway.app`)
-6. In **Vercel → collabboard → Settings → Environment Variables**, add:
-   ```
-   VITE_SOCKET_URL = https://collabboard-server.up.railway.app
-   ```
-7. **Redeploy** the Vercel project for the env var to take effect
-
-### Socket Server → Render
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pratham7711/collabboard)
-
-The `render.yaml` in the repo configures the service automatically.
+The `railway.json` and `render.yaml` in the repo configure the socket server automatically. Set `CORS_ORIGIN` to your Vercel URL and add `VITE_SOCKET_URL` in Vercel environment variables.
 
 ---
 
-## Environment Variables
+## ⌨️ Keyboard Shortcuts
 
-| Variable | Where | Description |
-|---|---|---|
-| `VITE_SOCKET_URL` | Vercel | URL of the deployed socket server (e.g. Railway). Leave empty to use the built-in Vercel serverless fallback (single-node, polling only). |
-| `PORT` | Railway/Render | HTTP port for the socket server (auto-set by the platform) |
-| `CORS_ORIGIN` | Railway/Render | Allowed frontend origin (e.g. `https://collabboard-phi.vercel.app`) |
+| Key | Tool |
+|---|---|
+| `V` | Select |
+| `P` | Pen |
+| `R` | Rectangle |
+| `C` | Circle |
+| `L` | Line |
+| `T` | Text |
+| `E` | Eraser |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `Ctrl+A` | Select All |
 
 ---
 
-## Tech Stack
+## 📄 License
 
-- **Frontend:** React 19, TypeScript, Vite 7, Fabric.js 7, Zustand, Framer Motion
-- **Realtime:** Socket.io 4 (WebSocket + polling fallback)
-- **Deployment:** Vercel (frontend), Railway or Render (socket server)
+MIT — free to use, modify, and distribute.
+
+---
+
+<p align="center">Built by <a href="https://github.com/pratham7711">Pratham</a> · Powered by Fabric.js + Socket.io</p>
